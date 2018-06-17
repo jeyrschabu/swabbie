@@ -98,6 +98,14 @@ interface Named {
   val name: String
 }
 
+@JsonTypeName("remoteResource")
+data class RemoteResource(
+  override val resourceId: String,
+  override val resourceType: String,
+  override val cloudProvider: String,
+  override val name: String
+) : Resource()
+
 /**
  * Cleanup candidate decorated with additional metadata
  * 'adjustedDeletionStamp' is the scheduled deletion time

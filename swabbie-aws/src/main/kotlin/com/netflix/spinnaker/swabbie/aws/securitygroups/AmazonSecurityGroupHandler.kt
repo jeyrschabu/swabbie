@@ -17,7 +17,6 @@
 package com.netflix.spinnaker.swabbie.aws.securitygroups
 
 import com.netflix.spectator.api.Registry
-import com.netflix.spinnaker.kork.lock.LockManager
 import com.netflix.spinnaker.moniker.frigga.FriggaReflectiveNamer
 import com.netflix.spinnaker.swabbie.*
 import com.netflix.spinnaker.swabbie.echo.Notifier

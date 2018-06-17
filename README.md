@@ -45,6 +45,12 @@ swabbie:
           dryRun: true
           retentionDays: 10
           notifyOwner: true
+          source:
+            remote: true
+            endpoints:
+              read: https://service-with-data
+              delete: https://service-for-deletion
+              
           exclusions:
             - type: Name
               attributes:
@@ -133,3 +139,7 @@ Resources can be excluded/opted out from consideration using exclusion policies.
 #### Whitelisting
 Whitelisting is part of the exclusion mechanism. When defined, only resources whitelisted will be considered, 
 skipping everything else not whitelisted. 
+
+
+#### Remote rules
+Allows to apply remote rules to remotely managed resources.

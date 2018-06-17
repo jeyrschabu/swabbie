@@ -66,6 +66,18 @@ class ResourceTypeConfiguration {
   var retentionDays: Int = 14
   var exclusions: MutableList<Exclusion> = mutableListOf()
   lateinit var name: String
+  lateinit var source: Source
+
+}
+
+class Source {
+  var remote: Boolean = false
+  lateinit var endpoints: Endpoints
+}
+
+class Endpoints {
+  lateinit var read: String
+  lateinit var delete: String
 }
 
 class Attribute {
