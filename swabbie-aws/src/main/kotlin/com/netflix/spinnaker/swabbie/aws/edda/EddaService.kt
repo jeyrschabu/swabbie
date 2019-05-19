@@ -23,6 +23,7 @@ import com.netflix.spinnaker.swabbie.aws.launchconfigurations.AmazonLaunchConfig
 import com.netflix.spinnaker.swabbie.aws.loadbalancers.AmazonElasticLoadBalancer
 import com.netflix.spinnaker.swabbie.aws.securitygroups.AmazonSecurityGroup
 import com.netflix.spinnaker.swabbie.aws.snapshots.AmazonSnapshot
+import com.netflix.spinnaker.swabbie.aws.volumes.AmazonVolume
 import retrofit.http.GET
 import retrofit.http.Path
 
@@ -59,6 +60,12 @@ interface EddaService {
 
   @GET("/api/v2/aws/snapshots/{snapshotId}")
   fun getSnapshot(@Path("snapshotId") snapshotId: String): AmazonSnapshot
+
+  @GET("/api/v2/aws/volumes;_expand")
+  fun getVolumes(): List<AmazonVolume>
+
+  @GET("/api/v2/aws/volumes/{volumeId}")
+  fun getVolume(@Path("volumeId") volumeId: String): AmazonVolume
 
   @GET("/api/v2/view/instances/{instanceId}")
   fun getInstance(@Path("instanceId") instanceId: String): AmazonInstance
