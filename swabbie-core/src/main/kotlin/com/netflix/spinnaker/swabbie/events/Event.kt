@@ -16,17 +16,19 @@
 
 package com.netflix.spinnaker.swabbie.events
 
+import com.netflix.spinnaker.swabbie.model.Identifiable
 import com.netflix.spinnaker.swabbie.model.MarkedResource
+import com.netflix.spinnaker.swabbie.model.Resource
 import com.netflix.spinnaker.swabbie.model.WorkConfiguration
 
-abstract class Event(
+abstract class Event<T : Identifiable>(
   open val action: Action,
-  open val markedResource: MarkedResource,
+  open val identifiableResource: T,
   open val workConfiguration: WorkConfiguration
 ) {
   override fun equals(other: Any?): Boolean {
-    if (other is Event) {
-      return action == other && other.markedResource == markedResource &&
+    if (other is Event<*>) {
+      return action == other && other.identifiableResource == identifiableResource &&
         workConfiguration == other.workConfiguration
     }
     return super.equals(other)
@@ -34,43 +36,48 @@ abstract class Event(
 
   override fun hashCode(): Int {
     var result = action.name.hashCode()
-    result = 31 * result + markedResource.hashCode()
+    result = 31 * result + identifiableResource.hashCode()
     result = 31 * result + workConfiguration.hashCode()
     return result
   }
 }
 
 enum class Action {
-  MARK, UNMARK, DELETE, NOTIFY, OPTOUT
+  MARK, UNMARK, DELETE, NOTIFY, OPTOUT, EXCLUDE
 }
 
 class OwnerNotifiedEvent(
-  override val markedResource: MarkedResource,
+  override val identifiableResource: MarkedResource,
   override val workConfiguration: WorkConfiguration
-) : Event(Action.NOTIFY, markedResource, workConfiguration)
+) : Event<MarkedResource>(Action.NOTIFY, identifiableResource, workConfiguration)
 
 class UnMarkResourceEvent(
-  override val markedResource: MarkedResource,
+  override val identifiableResource: MarkedResource,
   override val workConfiguration: WorkConfiguration
-) : Event(Action.UNMARK, markedResource, workConfiguration)
+) : Event<MarkedResource>(Action.UNMARK, identifiableResource, workConfiguration)
 
 class MarkResourceEvent(
-  override val markedResource: MarkedResource,
+  override val identifiableResource: MarkedResource,
   override val workConfiguration: WorkConfiguration
-) : Event(Action.MARK, markedResource, workConfiguration)
+) : Event<MarkedResource>(Action.MARK, identifiableResource, workConfiguration)
 
 class DeleteResourceEvent(
-  override val markedResource: MarkedResource,
+  override val identifiableResource: MarkedResource,
   override val workConfiguration: WorkConfiguration
-) : Event(Action.DELETE, markedResource, workConfiguration)
+) : Event<MarkedResource>(Action.DELETE, identifiableResource, workConfiguration)
 
 class OptOutResourceEvent(
-  override val markedResource: MarkedResource,
+  override val identifiableResource: MarkedResource,
   override val workConfiguration: WorkConfiguration
-) : Event(Action.OPTOUT, markedResource, workConfiguration)
+) : Event<MarkedResource>(Action.OPTOUT, identifiableResource, workConfiguration)
+
+class ResourceExcludedEvent(
+  override val identifiableResource: Resource,
+  override val workConfiguration: WorkConfiguration
+) : Event<Resource>(Action.EXCLUDE, identifiableResource, workConfiguration)
 
 class OrcaTaskFailureEvent(
   override val action: Action,
-  override val markedResource: MarkedResource,
+  override val identifiableResource: MarkedResource,
   override val workConfiguration: WorkConfiguration
-) : Event(action, markedResource, workConfiguration)
+) : Event<MarkedResource>(action, identifiableResource, workConfiguration)

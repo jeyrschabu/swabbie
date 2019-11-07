@@ -75,10 +75,16 @@ abstract class AbstractResourceTypeHandler<T : Resource>(
   private val swabbieProperties: SwabbieProperties,
   private val dynamicConfigService: DynamicConfigService,
   private val notificationQueue: NotificationQueue
-) : ResourceTypeHandler<T>, MetricsSupport(registry) {
+) : ResourceTypeHandler<T> {
   protected val log: Logger = LoggerFactory.getLogger(javaClass)
   private val resourceOwnerField: String = "swabbieResourceOwner"
   private val numberOfCandidatesId: Id = registry.createId("swabbie.candidates.processed")
+  private val totalVisitedId: Id = registry.createId("swabbie.candidates.totalVisited")
+
+  private val markDurationId = registry.createId("swabbie.resources.mark.duration")
+  private val resourceFailureId: Id = registry.createId("swabbie.resource.errors")
+  private val handlerFailureId: Id = registry.createId("swabbie.handler.errors")
+  private val handlerSuccessId: Id = registry.createId("swabbie.handler.success")
 
   /**
    * deletes a marked resource. Each handler must implement this function.
@@ -91,7 +97,11 @@ abstract class AbstractResourceTypeHandler<T : Resource>(
    * finds & tracks cleanup candidates
    */
   override fun mark(workConfiguration: WorkConfiguration) {
-    doMark(workConfiguration)
+    registry.timer(markDurationId).record {
+      execute(Action.MARK, workConfiguration) {
+        doMark(workConfiguration)
+      }
+    }
   }
 
   /**
@@ -211,140 +221,92 @@ abstract class AbstractResourceTypeHandler<T : Resource>(
     deleteResources(listOf(markedResource), workConfiguration)
   }
 
-  /**
-   * @param validMarkedResources: a list of resources that were just marked in the account/location defined in
-   *  the work configuration
-   * @param workConfiguration: defines the account/location to work with
-   *
-   * Fetches already marked resources, filters by work configuration namespace, and un-marks any resource whos id
-   * is not present in validMarkedResources, up to the configured limit of the number to process.
-   */
-  private fun unmarkResources(
-    validMarkedResources: Set<String>,
-    workConfiguration: WorkConfiguration
-  ) {
-    val markedResourcesInNamespace = resourceRepository
-      .getMarkedResources()
-      .filter { it.namespace == workConfiguration.namespace }
-    log.info("Checking for resources to unmark: " +
-      "fetched ${markedResourcesInNamespace.size} marked resources from the database in ${workConfiguration.namespace}," +
-      " ${validMarkedResources.size} resources were qualified to be marked this cycle.")
-    if (validMarkedResources.size < markedResourcesInNamespace.size / 2) {
-      log.warn("Number of resources qualified for marking is less than half the number in the database.")
+  private fun doMark(workConfiguration: WorkConfiguration): ActionStats {
+    // 1. Fetch resources in WorkConfiguration.namespace
+    val candidates: List<T>? = getCandidates(workConfiguration)?.sortedBy { it.createTs }
+    log.info("Fetched {} resources in : {}", candidates?.size, workConfiguration.namespace)
+
+    if (candidates == null || candidates.isEmpty()) {
+      return ActionStats(Action.MARK)
     }
 
-    var count = 0
-    for (resource in markedResourcesInNamespace) {
-      if (!validMarkedResources.contains(resource.resourceId)) {
-        ensureResourceUnmarked(resource, workConfiguration, "Resource no longer qualifies to be deleted. Details: ${resource.resource.details}")
-        count += 1
-        if (count >= swabbieProperties.maxUnmarkedPerCycle) {
-          log.warn("Unmarked ${swabbieProperties.maxUnmarkedPerCycle} resources (max allowed) in $javaClass. Aborting.")
-          return
+    // 2. Get resources that are currently marked in the database
+    val markedCandidates: List<MarkedResource> = workConfiguration.getMarkedResources()
+    val optedOutResources = workConfiguration.getOptedOutResources()
+
+    // 3. Compute resource owners, references and filter out all excluded resources
+    val filteredCandidateList = candidates
+      .withResolvedOwners(workConfiguration)
+      .also {
+        preProcessCandidates(it, workConfiguration)
+      }
+      .filter {
+        !shouldExcludeResource(it, workConfiguration, optedOutResources, Action.MARK)
+      }
+
+    val maxItemsToProcess = min(
+      filteredCandidateList.size,
+      workConfiguration.getMaxItemsProcessedPerCycle(dynamicConfigService)
+    )
+
+    if (filteredCandidateList.size > maxItemsToProcess) {
+      log.debug("Processing at most ${workConfiguration.maxItemsProcessedPerCycle} resources in ${workConfiguration.namespace}")
+    }
+
+    val stats = ActionStats(
+      action = Action.MARK,
+      total = candidates.size,
+      excluded = candidates.size - maxItemsToProcess
+    )
+
+    for (candidate in filteredCandidateList.subList(0, maxItemsToProcess)) {
+      try {
+        val violations: List<Summary> = candidate.getViolations()
+        val alreadyMarkedCandidate = markedCandidates.find { it.resourceId == candidate.resourceId }
+        when {
+          violations.isEmpty() -> {
+            ensureResourceUnmarked(alreadyMarkedCandidate,
+              workConfiguration,
+              "Resource no longer qualifies for deletion")
+          }
+          alreadyMarkedCandidate == null -> {
+            val newMarkedResource = MarkedResource(
+              resource = candidate,
+              summaries = violations,
+              namespace = workConfiguration.namespace,
+              resourceOwner = candidate.details[resourceOwnerField] as String,
+              projectedDeletionStamp = deletionTimestamp(workConfiguration),
+              lastSeenInfo = resourceUseTrackingRepository.getLastSeenInfo(candidate.resourceId)
+            )
+
+            if (!workConfiguration.dryRun) {
+              // todo eb: should this upsert event happen in ResourceTrackingManager?
+              resourceRepository.upsert(newMarkedResource)
+              applicationEventPublisher.publishEvent(MarkResourceEvent(newMarkedResource, workConfiguration))
+              log.info("Marked resource {} for deletion", newMarkedResource)
+            }
+
+            stats.incrementProcessed()
+          }
+          else -> {
+            // already marked, skipping.
+            log.debug("Already marked resource " + alreadyMarkedCandidate.resourceId + " ...skipping")
+          }
         }
+      } catch (e: Exception) {
+        log.error("${Action.MARK} failure", e)
+        stats.incrementFailure()
       }
     }
+
+    return stats
   }
 
-  private fun doMark(workConfiguration: WorkConfiguration) {
-    // initialize counters
-    exclusionCounters[Action.MARK] = AtomicInteger(0)
-    val timerId = markDurationTimer.start()
-    val candidateCounter = AtomicInteger(0)
-    val violationCounter = AtomicInteger(0)
-    val totalResourcesVisitedCounter = AtomicInteger(0)
-    val markedResources = mutableListOf<MarkedResource>()
-    val validMarkedIds = mutableSetOf<String>()
-
-    try {
-      log.info("${javaClass.simpleName} running. Configuration: {}", workConfiguration.namespace)
-      val candidates: List<T>? = getCandidates(workConfiguration)
-      if (candidates == null || candidates.isEmpty()) {
-        return
+  private fun WorkConfiguration.getMarkedResources(): List<MarkedResource> {
+    return resourceRepository.getMarkedResources()
+      .filter {
+        it.namespace == namespace
       }
-      log.info("Fetched {} resources. Configuration: {}", candidates.size, workConfiguration.toLog())
-      totalResourcesVisitedCounter.set(candidates.size)
-
-      val markedCandidates: List<MarkedResource> = resourceRepository.getMarkedResources()
-        .filter { it.namespace == workConfiguration.namespace }
-
-      val optedOutResourceStates: List<ResourceState> = resourceStateRepository.getAll()
-        .filter { it.markedResource.namespace == workConfiguration.namespace && it.optedOut }
-
-      val preProcessedCandidates = candidates
-        .withResolvedOwners(workConfiguration)
-        .also { preProcessCandidates(it, workConfiguration) }
-        .filter { !shouldExcludeResource(it, workConfiguration, optedOutResourceStates, Action.MARK) }
-
-      val maxItemsToProcess = min(preProcessedCandidates.size, workConfiguration.getMaxItemsProcessedPerCycle(dynamicConfigService))
-
-      for (candidate in preProcessedCandidates) {
-        if (candidateCounter.get() >= maxItemsToProcess) {
-          log.info("Max items ({}) to process reached, short-circuiting", maxItemsToProcess)
-          break
-        }
-
-        try {
-          val violations: List<Summary> = candidate.getViolations()
-          val alreadyMarkedCandidate = markedCandidates.find { it.resourceId == candidate.resourceId }
-          when {
-            violations.isEmpty() -> {
-              ensureResourceUnmarked(alreadyMarkedCandidate,
-                workConfiguration,
-                "Resource no longer qualifies for deletion")
-            }
-            alreadyMarkedCandidate == null -> {
-              val newMarkedResource = MarkedResource(
-                resource = candidate,
-                summaries = violations,
-                namespace = workConfiguration.namespace,
-                resourceOwner = candidate.details[resourceOwnerField] as String,
-                projectedDeletionStamp = deletionTimestamp(workConfiguration),
-                lastSeenInfo = resourceUseTrackingRepository.getLastSeenInfo(candidate.resourceId)
-              )
-
-              if (!workConfiguration.dryRun) {
-                // todo eb: should this upsert event happen in ResourceTrackingManager?
-                resourceRepository.upsert(newMarkedResource)
-                applicationEventPublisher.publishEvent(MarkResourceEvent(newMarkedResource, workConfiguration))
-                log.info("Marked resource {} for deletion", newMarkedResource)
-              }
-
-              candidateCounter.incrementAndGet()
-              violationCounter.addAndGet(violations.size)
-              markedResources.add(newMarkedResource)
-              validMarkedIds.add(newMarkedResource.resourceId)
-            }
-            else -> {
-              // already marked, skipping.
-              log.debug("Already marked resource " + alreadyMarkedCandidate.resourceId + " ...skipping")
-              validMarkedIds.add(alreadyMarkedCandidate.resourceId)
-            }
-          }
-        } catch (e: Exception) {
-          log.error("Failed while invoking ${javaClass.simpleName}", e)
-          recordFailureForAction(Action.MARK, workConfiguration, e)
-        }
-      }
-
-      try {
-        unmarkResources(validMarkedIds, workConfiguration)
-      } catch (e: Exception) {
-        log.error("Failed to unmark resources {}", validMarkedIds, e)
-        recordFailureForAction(Action.UNMARK, workConfiguration, e)
-      }
-
-      printResult(candidateCounter, totalResourcesVisitedCounter, workConfiguration, markedResources, Action.MARK)
-    } finally {
-      recordMarkMetrics(
-        timerId,
-        workConfiguration,
-        violationCounter,
-        candidateCounter,
-        totalResourcesVisitedCounter,
-        resourceRepository.getNumMarkedResources()
-      )
-    }
   }
 
   override fun recalculateDeletionTimestamp(namespace: String, retentionSeconds: Long, numResources: Int) {
@@ -456,7 +418,6 @@ abstract class AbstractResourceTypeHandler<T : Resource>(
       candidateCounter.get(),
       totalProcessed,
       totalResourcesVisitedCounter.get(),
-      exclusionCounters[action],
       workConfiguration.toLog()
     )
 
@@ -481,49 +442,41 @@ abstract class AbstractResourceTypeHandler<T : Resource>(
     val creationDate = Instant.ofEpochMilli(resource.createTs).atZone(ZoneId.systemDefault()).toLocalDate()
     if (action != Action.NOTIFY && DAYS.between(creationDate, LocalDate.now()) < workConfiguration.maxAge) {
       log.debug("Excluding resource (newer than {} days) {}", workConfiguration.maxAge, resource)
-      exclusionCounters[action]?.incrementAndGet()
       return true
     }
 
     optedOutResourceStates.find { it.markedResource.resourceId == resource.resourceId }?.let {
       log.debug("Skipping Opted out resource {}", resource)
-      exclusionCounters[action]?.incrementAndGet()
       return true
     }
 
-    return shouldExclude(resource, workConfiguration, exclusionPolicies, log).also { excluded ->
-      if (excluded) {
-        exclusionCounters[action]?.incrementAndGet()
-      }
-    }
+    return shouldExclude(resource, workConfiguration, exclusionPolicies, log)
   }
 
-  private fun doDelete(workConfiguration: WorkConfiguration) {
-    exclusionCounters[Action.DELETE] = AtomicInteger(0)
-    val candidateCounter = AtomicInteger(0)
+  private fun doDelete(workConfiguration: WorkConfiguration): ActionStats? {
     val markedResources = mutableListOf<MarkedResource>()
     if (workConfiguration.dryRun) {
       log.info("Deletion not enabled in dryRun for {}. Skipping...", workConfiguration.toLog())
-      return
+      return null
     }
 
     val currentMarkedResourcesToDelete = workConfiguration.getMarkedResourcesToDelete()
     if (currentMarkedResourcesToDelete.isEmpty()) {
       log.info("Nothing to delete. Configuration: {}", workConfiguration.toLog())
-      return
+      return null
     }
 
-    val optedOutResourceStates: List<ResourceState> = resourceStateRepository.getAll()
-      .filter { it.markedResource.namespace == workConfiguration.namespace && it.optedOut }
+    val optedOutResourceStates: List<ResourceState> = workConfiguration.getOptedOutResources()
 
     val candidates: List<T>? = getCandidates(workConfiguration)
     if (candidates == null) {
       currentMarkedResourcesToDelete
         .forEach { ensureResourceUnmarked(it, workConfiguration, "No current candidates for deletion") }
       log.info("Nothing to delete. No upstream resources. Configuration: {}", workConfiguration.toLog())
-      return
+      return null
     }
 
+    val result = ActionStats(action = Action.DELETE, total = candidates.size)
     val processedCandidates = candidates
       .filter { candidate ->
         currentMarkedResourcesToDelete.any { r ->
@@ -547,26 +500,20 @@ abstract class AbstractResourceTypeHandler<T : Resource>(
     val maxItemsToProcess = min(confirmedResourcesToDelete.size, workConfiguration.getMaxItemsProcessedPerCycle(dynamicConfigService))
     confirmedResourcesToDelete.subList(0, maxItemsToProcess).let {
       partitionList(it, workConfiguration).forEach { partition ->
-        if (!partition.isEmpty()) {
+        if (partition.isNotEmpty()) {
           try {
             deleteResources(partition, workConfiguration)
             partition.forEach { it -> applicationEventPublisher.publishEvent(DeleteResourceEvent(it, workConfiguration)) }
-            candidateCounter.addAndGet(partition.size)
+            result.incrementProcessed(partition.size)
           } catch (e: Exception) {
             log.error("Failed to delete $it. Configuration: {}", workConfiguration.toLog(), e)
-            recordFailureForAction(Action.DELETE, workConfiguration, e)
+            result.incrementFailure()
           }
         }
       }
     }
 
-    printResult(
-      candidateCounter,
-      AtomicInteger(currentMarkedResourcesToDelete.size),
-      workConfiguration,
-      markedResources,
-      Action.DELETE
-    )
+    return result
   }
 
   /**
@@ -634,22 +581,72 @@ abstract class AbstractResourceTypeHandler<T : Resource>(
   }
 
   /**
+   * @return Opted Out resource states
+   */
+  private fun WorkConfiguration.getOptedOutResources(): List<ResourceState> {
+    return resourceStateRepository.getAll()
+      .filter {
+        it.markedResource.namespace == namespace && it.optedOut
+      }
+  }
+
+  /**
    * Filters out excluded and opted out resources.
    * Returns at most [WorkConfiguration.maxItemsProcessedPerCycle] resources
    */
   private fun List<MarkedResource>.filterExcludedAndOptedOut(
     workConfiguration: WorkConfiguration
   ): List<MarkedResource> {
-    val optedOutResourceStates: List<ResourceState> = resourceStateRepository.getAll()
-      .filter {
-        it.markedResource.namespace == workConfiguration.namespace && it.optedOut
-      }
+    val optedOutResourceStates: List<ResourceState> = workConfiguration.getOptedOutResources()
     val maxItemsToProcess = min(size, workConfiguration.getMaxItemsProcessedPerCycle(dynamicConfigService))
     return subList(0, maxItemsToProcess)
       .filter {
         @Suppress("UNCHECKED_CAST")
         !shouldExcludeResource(it.resource as T, workConfiguration, optedOutResourceStates, Action.NOTIFY)
       }
+  }
+
+  private fun Id.withTags(action: Action, workConfiguration: WorkConfiguration): Id {
+    return this.withTags(
+      "action", action.name,
+      "resourceType", workConfiguration.resourceType,
+      "account", workConfiguration.account.name,
+      "region", workConfiguration.location
+    )
+  }
+
+  private fun execute(action: Action, workConfiguration: WorkConfiguration, block: () -> ActionStats?) {
+    log.info("Running action $action in ${workConfiguration.namespace}")
+
+    val stats: ActionStats? = try {
+      block.invoke()
+    } catch (e: Exception) {
+      log.error("Failed while running $action in ${workConfiguration.namespace}", e)
+      registry.counter(handlerFailureId.withTags(action, workConfiguration)).increment()
+      null
+    }
+
+    if (stats != null) {
+      registry.gauge(totalVisitedId.withTags(action, workConfiguration)).set(stats.total.toDouble())
+      registry.gauge(resourceFailureId.withTags(action, workConfiguration)).set(stats.failed.toDouble())
+      registry.gauge(numberOfCandidatesId.withTags(action, workConfiguration)).set(stats.processed.toDouble())
+    }
+  }
+
+  private data class ActionStats(
+    val action: Action,
+    var failed: Int = 0,
+    val total: Int = 0,
+    var processed: Int = 0,
+    var excluded: Int = 0
+  ) {
+    fun incrementFailure() {
+      failed += 1
+    }
+
+    fun incrementProcessed(inc: Int = 1) {
+      processed += inc
+    }
   }
 
   private val Int.days: Period

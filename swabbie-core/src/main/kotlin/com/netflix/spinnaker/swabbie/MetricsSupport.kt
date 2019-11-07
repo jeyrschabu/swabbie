@@ -27,12 +27,6 @@ import java.util.concurrent.atomic.AtomicInteger
 open class MetricsSupport(
   private val registry: Registry
 ) {
-  protected val exclusionCounters = mutableMapOf(
-    Action.MARK to AtomicInteger(0),
-    Action.DELETE to AtomicInteger(0),
-    Action.NOTIFY to AtomicInteger(0)
-  )
-
   protected val markDurationTimer: LongTaskTimer = LongTaskTimer.get(
     registry, registry.createId("swabbie.resources.mark.duration")
   )
@@ -44,13 +38,6 @@ open class MetricsSupport(
   private val resourcesExcludedId: Id = registry.createId("swabbie.resources.excluded")
   private val resourceFailureId: Id = registry.createId("swabbie.resources.failures")
   private val candidatesCountId: Id = registry.createId("swabbie.resources.candidatesCount")
-
-  protected val markCountId: Id = registry.createId("swabbie.resources.markCount")
-  protected val unMarkCountId: Id = registry.createId("swabbie.resources.unMarkCount")
-  protected val deleteCountId: Id = registry.createId("swabbie.resources.deleteCount")
-  protected val notifyCountId: Id = registry.createId("swabbie.resources.notifyCount")
-  protected val optOutCountId: Id = registry.createId("swabbie.resources.optOutCount")
-  protected val orcaTaskFailureId: Id = registry.createId("swabbie.resources.orcaTaskFailureCount")
   protected val totalMarkedId: Id = registry.createId("swabbie.resources.totalMarked")
 
   protected fun recordMarkMetrics(
@@ -68,20 +55,6 @@ open class MetricsSupport(
         "configuration", workConfiguration.namespace,
         "resourceTypeHandler", javaClass.simpleName
       )).set(candidateCounter.toDouble())
-
-    registry.gauge(
-      markViolationsId.withTags(
-        "resourceType", workConfiguration.resourceType,
-        "configuration", workConfiguration.namespace,
-        "resourceTypeHandler", javaClass.simpleName
-      )).set(violationCounter.toDouble())
-
-    registry.gauge(
-      resourcesExcludedId.withTags(
-        "resourceType", workConfiguration.resourceType,
-        "configuration", workConfiguration.namespace,
-        "resourceTypeHandler", javaClass.simpleName
-      )).set(exclusionCounters[Action.MARK]!!.toDouble())
 
     registry.gauge(
       resourcesVisitedId.withTags(
