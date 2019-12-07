@@ -35,7 +35,7 @@ object AgeRuleTest {
     val createdAt = clock.instant().minus(5, ChronoUnit.DAYS)
     val resource = TestResource(resourceId = "1", createTs = createdAt.toEpochMilli())
 
-    var rule = AgeRule(clock)
+    val rule = AgeRule(clock)
     // doesn't apply because the parameter was not provided
     expectThat(rule.apply(resource).summary).isNull()
 
