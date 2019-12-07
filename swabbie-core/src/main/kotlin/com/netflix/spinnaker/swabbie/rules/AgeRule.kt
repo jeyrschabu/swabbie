@@ -27,13 +27,9 @@ class AgeRule(
   private val clock: Clock
 ) : Rule {
   override fun <T : Resource> applicableForType(clazz: Class<T>): Boolean = true
-  override fun <T : Resource> apply(resource: T): Result {
-    return apply(resource, null)
-  }
-
   override fun <T : Resource> apply(resource: T, ruleDefinition: RuleDefinition?): Result {
     val age = resource.age(clock).toDays()
-    val moreThanDays = ruleDefinition?.parameters?.get("moreThanDays") as? Long
+    val moreThanDays = ruleDefinition?.parameters?.get("moreThanDays") as? Int
     if (moreThanDays == null || age < moreThanDays) {
       return Result(null)
     }

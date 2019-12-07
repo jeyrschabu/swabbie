@@ -22,7 +22,7 @@ import com.netflix.spinnaker.config.ResourceTypeConfiguration.RuleDefinition
 import com.nhaarman.mockito_kotlin.doReturn
 import com.nhaarman.mockito_kotlin.mock
 import com.nhaarman.mockito_kotlin.whenever
-import org.junit.Test
+import org.junit.jupiter.api.Test
 import strikt.api.expectThat
 import strikt.assertions.isNotNull
 import strikt.assertions.isNull

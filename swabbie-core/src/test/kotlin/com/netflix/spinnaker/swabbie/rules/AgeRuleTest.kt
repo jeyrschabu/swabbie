@@ -18,7 +18,7 @@ package com.netflix.spinnaker.swabbie.rules
 
 import com.netflix.spinnaker.config.ResourceTypeConfiguration.RuleDefinition
 import com.netflix.spinnaker.swabbie.test.TestResource
-import org.junit.Test
+import org.junit.jupiter.api.Test
 import strikt.api.expectThat
 import strikt.assertions.isNotNull
 import strikt.assertions.isNull
@@ -31,7 +31,7 @@ object AgeRuleTest {
   private val clock = Clock.fixed(Instant.now(), ZoneOffset.UTC)
 
   @Test
-  fun `should apply if resource is older than threshold number of days`() {
+  fun `should apply if resource is older than moreThanDays`() {
     val createdAt = clock.instant().minus(5, ChronoUnit.DAYS)
     val resource = TestResource(resourceId = "1", createTs = createdAt.toEpochMilli())
 

@@ -42,7 +42,7 @@ class ZeroInstanceDisabledServerGroupRule(
   private val disabledDurationInDays: Long = 30
 
   override fun <T : Resource> applicableForType(clazz: Class<T>): Boolean = AmazonAutoScalingGroup::class.java.isAssignableFrom(clazz)
-  override fun <T : Resource> apply(resource: T): Result {
+  override fun <T : Resource> apply(resource: T, ruleDefinition: RuleDefinition?): Result {
     if (resource !is AmazonAutoScalingGroup || resource.isInLoadBalancer()) {
       return Result(null)
     }
@@ -76,7 +76,7 @@ class ZeroInstanceInDiscoveryDisabledServerGroupRule(
   private val disabledDurationInDays: Long = 30
 
   override fun <T : Resource> applicableForType(clazz: Class<T>): Boolean = AmazonAutoScalingGroup::class.java.isAssignableFrom(clazz)
-  override fun <T : Resource> apply(resource: T): Result {
+  override fun <T : Resource> apply(resource: T, ruleDefinition: RuleDefinition?): Result {
     if (resource !is AmazonAutoScalingGroup || resource.isInLoadBalancer()) {
       return Result(null)
     }
@@ -114,11 +114,11 @@ class ZeroInstanceInDiscoveryDisabledServerGroupRule(
 
 @Component
 class ZeroInstanceRule : ServerGroupRule() {
-  override fun <T : Resource> applyRule(resource: T): Result {
-    return apply(resource)
+  override fun <T : Resource> applyRule(resource: T, ruleDefinition: RuleDefinition?): Result {
+    return apply(resource, ruleDefinition)
   }
 
-  override fun <T : Resource> apply(resource: T): Result {
+  override fun <T : Resource> apply(resource: T, ruleDefinition: RuleDefinition?): Result {
     if (resource !is AmazonAutoScalingGroup || !resource.instances.isNullOrEmpty()) {
       return Result(null)
     }
@@ -129,11 +129,11 @@ class ZeroInstanceRule : ServerGroupRule() {
 
 @Component
 class ZeroLoadBalancerRule : ServerGroupRule() {
-  override fun <T : Resource> applyRule(resource: T): Result {
-    return apply(resource)
+  override fun <T : Resource> applyRule(resource: T, ruleDefinition: RuleDefinition?): Result {
+    return apply(resource, ruleDefinition)
   }
 
-  override fun <T : Resource> apply(resource: T): Result {
+  override fun <T : Resource> apply(resource: T, ruleDefinition: RuleDefinition?): Result {
     if (resource !is AmazonAutoScalingGroup || !resource.loadBalancerNames.isNullOrEmpty()) {
       return Result(null)
     }
@@ -146,8 +146,8 @@ class ZeroLoadBalancerRule : ServerGroupRule() {
 class DisabledLoadBalancerRule(
   private val clock: Clock
 ) : ServerGroupRule() {
-  override fun <T : Resource> applyRule(resource: T): Result {
-    return apply(resource, null)
+  override fun <T : Resource> applyRule(resource: T, ruleDefinition: RuleDefinition?): Result {
+    return apply(resource, ruleDefinition)
   }
 
   override fun <T : Resource> apply(resource: T, ruleDefinition: RuleDefinition?): Result {
@@ -156,8 +156,8 @@ class DisabledLoadBalancerRule(
     }
 
     val disabledTime = resource.disabledTime()!!
-    val moreThanDays = ruleDefinition?.parameters?.get("moreThanDays") as? Long
-    if (moreThanDays != null && disabledTime.isBefore(LocalDateTime.now(clock).minusDays(moreThanDays))) {
+    val moreThanDays = ruleDefinition?.parameters?.get("moreThanDays") as? Int
+    if (moreThanDays != null && disabledTime.isBefore(LocalDateTime.now(clock).minusDays(moreThanDays.toLong()))) {
       return Result(
         Summary(description = "Server Group ${resource.resourceId} has been out of balancer longer than $moreThanDays days.", ruleName = name())
       )
@@ -174,12 +174,12 @@ class NotInDiscoveryRule(
   private val discoveryClient: Optional<DiscoveryClient>,
   private val clock: Clock
 ) : ServerGroupRule() {
-  override fun <T : Resource> applyRule(resource: T): Result {
-    return apply(resource, null)
+  override fun <T : Resource> applyRule(resource: T, ruleDefinition: RuleDefinition?): Result {
+    return apply(resource, ruleDefinition)
   }
 
   override fun <T : Resource> apply(resource: T, ruleDefinition: RuleDefinition?): Result {
-    val moreThanDays = ruleDefinition?.parameters?.get("moreThanDays") as? Long
+    val moreThanDays = ruleDefinition?.parameters?.get("moreThanDays") as? Int
     if (resource !is AmazonAutoScalingGroup || !discoveryClient.isPresent || !resource.isOutOfDiscovery(moreThanDays)) {
       return Result(null)
     }
@@ -198,7 +198,7 @@ class NotInDiscoveryRule(
    * @param thresholdDays optional threshold for how many days this server group is out of service.
    * return true if all instances are out of discovery and for over thresholdDays (if thresholdDays != null)
    */
-  private fun AmazonAutoScalingGroup.isOutOfDiscovery(thresholdDays: Long?): Boolean {
+  private fun AmazonAutoScalingGroup.isOutOfDiscovery(thresholdDays: Int?): Boolean {
     return instances?.all {
       val instanceInfos = discoveryClient
         .get()
@@ -221,9 +221,9 @@ class NotInDiscoveryRule(
 }
 
 abstract class ServerGroupRule : Rule {
-  abstract fun <T : Resource> applyRule(resource: T): Result
-  override fun <T : Resource> apply(resource: T): Result {
-    return applyRule(resource)
+  abstract fun <T : Resource> applyRule(resource: T, ruleDefinition: RuleDefinition?): Result
+  override fun <T : Resource> apply(resource: T, ruleDefinition: RuleDefinition?): Result {
+    return applyRule(resource, ruleDefinition)
   }
 
   override fun <T : Resource> applicableForType(clazz: Class<T>): Boolean {
