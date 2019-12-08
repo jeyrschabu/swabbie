@@ -36,7 +36,8 @@ object ZeroLoadBalancerRuleTest {
         mapOf("instanceId" to "i-01234")
       ),
       loadBalancerNames = listOf(),
-      createdTime = clock.millis()
+      createdTime = clock.millis(),
+      launchConfigurationName = "testapp-v001-1"
     )
 
     expectThat(rule.apply(asg).summary).isNotNull()

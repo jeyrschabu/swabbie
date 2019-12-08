@@ -36,7 +36,8 @@ object ExpiredResourceRuleTest {
       mapOf("instanceId" to "i-01234")
     ),
     loadBalancerNames = listOf(),
-    createdTime = now
+    createdTime = now,
+    launchConfigurationName = "testapp-v001-1"
   )
 
   @BeforeEach

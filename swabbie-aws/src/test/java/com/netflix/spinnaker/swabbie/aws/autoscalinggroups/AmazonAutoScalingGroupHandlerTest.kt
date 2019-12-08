@@ -195,7 +195,8 @@ object AmazonAutoScalingGroupHandlerTest {
           mapOf("instanceId" to "i-01234")
         ),
         loadBalancerNames = listOf(),
-        createdTime = clock.millis()
+        createdTime = clock.millis(),
+        launchConfigurationName = "testapp-v001-1"
       ),
       AmazonAutoScalingGroup(
         autoScalingGroupName = "app-v001",
@@ -203,7 +204,8 @@ object AmazonAutoScalingGroupHandlerTest {
           mapOf("instanceId" to "i-00000")
         ),
         loadBalancerNames = listOf(),
-        createdTime = clock.millis()
+        createdTime = clock.millis(),
+        launchConfigurationName = "app-v001-1"
       )
     )
 
@@ -230,7 +232,8 @@ object AmazonAutoScalingGroupHandlerTest {
             suspendedProcess
           ),
           loadBalancerNames = listOf(),
-          createdTime = twoDaysAgo
+          createdTime = twoDaysAgo,
+          launchConfigurationName = "testapp-v001-1"
         ),
         AmazonAutoScalingGroup(
           autoScalingGroupName = "app-v001",
@@ -239,7 +242,8 @@ object AmazonAutoScalingGroupHandlerTest {
           suspendedProcesses = listOf(
             suspendedProcess
           ),
-          createdTime = twoDaysAgo
+          createdTime = twoDaysAgo,
+          launchConfigurationName = "app-v001-1"
         )
       )
 
@@ -285,7 +289,8 @@ object AmazonAutoScalingGroupHandlerTest {
       suspendedProcesses = listOf(
         suspendedProcess
       ),
-      createdTime = Instant.now(clock).minus(3, ChronoUnit.DAYS).toEpochMilli()
+      createdTime = Instant.now(clock).minus(3, ChronoUnit.DAYS).toEpochMilli(),
+      launchConfigurationName = "app-v001-1"
     )
 
     whenever(resourceRepository.getMarkedResourcesToDelete()) doReturn

@@ -43,7 +43,8 @@ object DisabledLoadBalancerRuleTest {
       suspendedProcesses = listOf(
         suspendedProcess
       ),
-      createdTime = clock.millis()
+      createdTime = clock.millis(),
+      launchConfigurationName = "testapp-v001-1"
     )
 
     clock.incrementBy(Duration.ofDays(2))

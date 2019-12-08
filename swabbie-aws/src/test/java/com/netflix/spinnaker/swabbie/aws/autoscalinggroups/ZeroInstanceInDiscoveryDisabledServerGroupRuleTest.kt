@@ -45,7 +45,8 @@ object ZeroInstanceInDiscoveryDisabledServerGroupRuleTest {
         mapOf("instanceId" to "i-01234")
       ),
       loadBalancerNames = listOf(),
-      createdTime = clock.millis()
+      createdTime = clock.millis(),
+      launchConfigurationName = "testapp-v001-1"
     )
 
     val result = ZeroInstanceInDiscoveryDisabledServerGroupRule(
@@ -79,7 +80,8 @@ object ZeroInstanceInDiscoveryDisabledServerGroupRuleTest {
         suspendedProcess
       ),
       loadBalancerNames = listOf(),
-      createdTime = clock.millis()
+      createdTime = clock.millis(),
+      launchConfigurationName = "testapp-v001-1"
     )
 
     val result = ZeroInstanceInDiscoveryDisabledServerGroupRule(
@@ -111,7 +113,8 @@ object ZeroInstanceInDiscoveryDisabledServerGroupRuleTest {
       autoScalingGroupName = "testapp-v001",
       instances = listOf(),
       loadBalancerNames = listOf(),
-      createdTime = clock.millis()
+      createdTime = clock.millis(),
+      launchConfigurationName = "testapp-v001-1"
     )
 
     val result = ZeroInstanceInDiscoveryDisabledServerGroupRule(
@@ -140,7 +143,8 @@ object ZeroInstanceInDiscoveryDisabledServerGroupRuleTest {
       autoScalingGroupName = "testapp-v001",
       instances = listOf(),
       loadBalancerNames = listOf(),
-      createdTime = clock.millis()
+      createdTime = clock.millis(),
+      launchConfigurationName = "testapp-v001-1"
     )
 
     val result = ZeroInstanceInDiscoveryDisabledServerGroupRule(

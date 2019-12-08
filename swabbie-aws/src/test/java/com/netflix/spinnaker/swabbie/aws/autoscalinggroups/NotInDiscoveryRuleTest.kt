@@ -54,7 +54,8 @@ object NotInDiscoveryRuleTest {
       autoScalingGroupName = "testapp-v001",
       instances = listOf(mapOf("instanceId" to instanceId)),
       loadBalancerNames = listOf(),
-      createdTime = clock.millis()
+      createdTime = clock.millis(),
+      launchConfigurationName = "testapp-v001-1"
     )
 
     val rule = NotInDiscoveryRule(Optional.of(discoveryClient), clock)
