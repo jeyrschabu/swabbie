@@ -27,7 +27,7 @@ import java.time.ZoneId
 @JsonTypeName("amazonLaunchConfiguration")
 data class AmazonLaunchConfiguration(
   val imageId: String,
-  private val launchConfigurationName: String,
+  val launchConfigurationName: String,
   private val createdTime: Long,
   override val resourceId: String = launchConfigurationName,
   override val resourceType: String = LAUNCH_CONFIGURATION,

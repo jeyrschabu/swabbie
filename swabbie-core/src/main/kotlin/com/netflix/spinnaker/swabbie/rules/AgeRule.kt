@@ -21,8 +21,10 @@ import com.netflix.spinnaker.swabbie.model.Resource
 import com.netflix.spinnaker.swabbie.model.Result
 import com.netflix.spinnaker.swabbie.model.Rule
 import com.netflix.spinnaker.swabbie.model.Summary
+import org.springframework.stereotype.Component
 import java.time.Clock
 
+@Component
 class AgeRule(
   private val clock: Clock
 ) : Rule {

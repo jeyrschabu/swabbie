@@ -34,6 +34,7 @@ data class AmazonAutoScalingGroup(
   val autoScalingGroupName: String,
   val instances: List<Map<String, Any>>?,
   val loadBalancerNames: List<String>?,
+  val launchConfigurationName: String,
   var suspendedProcesses: List<SuspendedProcess>? = null,
   private val createdTime: Long,
   override val resourceId: String = autoScalingGroupName,

@@ -216,7 +216,7 @@ abstract class AbstractResourceTypeHandler<T : Resource>(
     val markedResources = mutableListOf<MarkedResource>()
     try {
       log.info("${javaClass.simpleName} running. Configuration: {}", workConfiguration.namespace)
-      val candidates: List<T>? = getCandidates(workConfiguration)
+      val candidates: List<T>? = getCandidates(workConfiguration)?.sortedBy { it.createTs }
       if (candidates == null || candidates.isEmpty()) {
         return
       }
