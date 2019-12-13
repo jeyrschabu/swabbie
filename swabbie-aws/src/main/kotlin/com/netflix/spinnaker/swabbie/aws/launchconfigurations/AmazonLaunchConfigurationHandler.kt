@@ -64,7 +64,7 @@ class AmazonLaunchConfigurationHandler(
   private val orcaService: OrcaService,
   private val applicationUtils: ApplicationUtils,
   private val taskTrackingRepository: TaskTrackingRepository,
-  private val resourceUseTrackingRepository: ResourceUseTrackingRepository,
+  resourceUseTrackingRepository: ResourceUseTrackingRepository,
   notificationQueue: NotificationQueue
 ) : AbstractResourceTypeHandler<AmazonLaunchConfiguration>(
   registry,
@@ -158,11 +158,20 @@ class AmazonLaunchConfigurationHandler(
         it.launchConfigurationName
       }
 
-    val launchConfigs = launchConfigurationCache.get()
+    val withImages = launchConfigurationCache
+      .get()
+      .getRefdAmisForRegion(params.region)
+      .values
+      .flatten()
+
     launchConfigurations.forEach { lc ->
-      val refByImages = launchConfigs.getLaunchConfigsByRegionForImage(params.copy(id = lc.resourceId))
-      lc.set(NoServerGroupRule.isUsedByServerGroups, lc.name in usedByServerGroups)
-      lc.set(NoImageRule.hasImage, refByImages.isNotEmpty())
+      lc.set(isUsedByServerGroups, lc.name in usedByServerGroups)
+      lc.set(hasImage, lc.name in withImages.map { it.name })
     }
+  }
+
+  companion object {
+    const val isUsedByServerGroups = "isUsedByServerGroups"
+    const val hasImage = "hasImage"
   }
 }
