@@ -204,7 +204,7 @@ class ResourceTypeConfiguration {
 
   class RuleDefinition {
     var name: String = ""
-    var parameters: Map<String, Any> = mapOf()
+    var parameters: Map<String, Any?> = mapOf()
 
     override fun equals(other: Any?): Boolean {
       if (this === other) {
